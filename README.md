@@ -1,6 +1,10 @@
 # AM-Transmitter-and-Reciever
 Group Final Project with John Danison and Matt Tolla pushing our knowlege of receiving data to the other side
 
+if for some reason you are here looking for answers remember, broadcasting on most frequencies can be ILLEGAL. Make sure you check which ones you can use
+
+We transmitted at 467584000 because it is within the Family Radio Service frequency range
+
 AM Transmitter (ADALM-PLUTO) + Receiver (RTL SDR) Radio Station
 Used:
   Online ADALM Pluto guide for Matlab Simulink setup
@@ -22,4 +26,5 @@ Transmitter Simulink
 Reciever Simulink
 <img width="2026" height="621" alt="unnamed" src="https://github.com/user-attachments/assets/cc746fb8-43eb-4c58-8264-f3d22665749b" />
 
-
+SDRSharp Spectrogram
+<img width="1919" height="1119" alt="unnamed" src="https://github.com/user-attachments/assets/08685da0-491f-4945-9e1e-aba173004f04" />
