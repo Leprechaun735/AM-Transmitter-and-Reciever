@@ -1,0 +1,5 @@
+Plug in the ADALM-PLUTO transmitter with the antenna into your computer
+Compile and Run given transmitter Simulink code
+From here in MatLab you may choose a mono song to transmit
+  To test if correct use SDRSharp to see the Spectrum Analyzer and Spectrogram
+
