@@ -1,0 +1,10 @@
+Plug in the ADALM-PLUTO transmitter with the antenna into your transmitting computer
+Compile and Run given transmitter Simulink code
+From here in MatLab you may choose a mono song to transmit
+  To test if correct use SDRSharp to see the Spectrum Analyzer and Spectrogram
+
+Plug in the RTL SDR with an antenna into your recieving computer
+  Compile and Run given receiver Simulink code
+  Before we set up the TI board we can test
+  this by sending the audio just out of our 
+  computer speakers
