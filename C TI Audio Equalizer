@@ -1,0 +1,240 @@
+/*
+
+Audio Equalizer from Lab 5
+
+*/
+
+
+#include "stdio.h"
+#include "usbstk5515.h"
+#include "aic3204.h"
+#include "PLL.h"
+#include "stereo.h"
+#include "dsplib.h"
+#include "../../iir_lowpass_coefficients.h"
+#include "../../iir_bandpass_coefficients.h"
+#include "../../iir_highpass_coefficients.h"
+
+#include "oled.h"
+
+// Variables Declared
+
+Int16 x_left;
+Int16 x_right;
+Int16 y_left;
+Int16 y_right;
+
+#define GAIN_IN_dB 0
+unsigned long int i = 0;
+
+#define N 16 // data block size for IIR filter
+
+#define GAIN_SCALE 2047 // 1.0 corresponds to 2047
+
+// Filter gain presets (scaled to integer values)
+Int16 gain_presets[4][8] = {
+	{0, 0, 0, 0, 0, 0, 819, 0},  // g7 = 0.4 * 2047
+	{2047, 1535, 1023, 0, 1023, 1842, 2047, 1638}, // Mixed gains
+	{205, 410, 1023, 2047, 2047, 1023, 410, 205},  // Another variation
+	{0, 2047, 2047, 2047, 0, 0, 0, 0} // Extreme setting
+};
+
+Int16 gains[8] = {0}; // Active gain settings
+
+
+
+
+
+
+
+DATA x[2 * N] = {0};
+DATA y[2 * N] = {0};
+
+DATA y1[2 * N] = {0};
+DATA y2[2 * N] = {0};
+DATA y3[2 * N] = {0};
+DATA y4[2 * N] = {0};
+DATA y5[2 * N] = {0};
+DATA y6[2 * N] = {0};
+DATA y7[2 * N] = {0};
+DATA y8[2 * N] = {0};
+
+DATA delay_buffer1[4 * NUM_SOS + 1] = {0};
+DATA delay_buffer2[4 * NUM_SOS + 1] = {0};
+DATA delay_buffer3[4 * NUM_SOS + 1] = {0};
+DATA delay_buffer4[4 * NUM_SOS + 1] = {0};
+DATA delay_buffer5[4 * NUM_SOS + 1] = {0};
+DATA delay_buffer6[4 * NUM_SOS + 1] = {0};
+DATA delay_buffer7[4 * NUM_SOS + 1] = {0};
+DATA delay_buffer8[4 * NUM_SOS + 1] = {0};
+
+int oflag;
+int k = 0;
+int sign = 1;
+
+int n = 0;
+long temp = 0;
+
+int m = 0;
+int o = 0;
+int p = 0;
+int oled_lines[48] = {0};
+
+int preset_index = 0; // Tracks active preset
+Uint16 switches, switches_1 = 0; // Button states for debounce
+
+// function declaration   actual implementation in iircas51_q214.asm
+ushort iircas51_q214(DATA *, DATA *, DATA *, DATA *, ushort, ushort);
+
+void update_gains() {
+	// Copy selected preset into active gain settings
+	int i = 0;
+	for (; i < 8; i++) {
+    	gains[i] = gain_presets[preset_index][i];
+	}
+
+	// Update LED states based on the preset
+	switch (preset_index) {
+    	case 0:
+        	USBSTK5515_ULED_off(0);
+        	USBSTK5515_ULED_off(1);
+
+        	for (p = 0; p < 48; p++) {
+            	oled_lines[p] = 0;
+        	}
+
+        	for (m = 0; m < 3; m++) {
+            	for (o = 0; o < 8; o++) {
+                	oled_lines[6*o + m] = gain_presets[0][o] * 8 + 1;
+            	}
+        	}
+        	oled_display_lines(&oled_lines[0]);
+        	break;
+    	case 1:
+        	USBSTK5515_ULED_on(0);
+        	USBSTK5515_ULED_off(1);
+
+        	for (p = 0; p < 48; p++) {
+            	oled_lines[p] = 0;
+        	}
+        	for (m = 0; m < 3; m++) {
+            	for (o = 0; o < 8; o++) {
+                	oled_lines[6*o + m] = gain_presets[1][o] * 8 + 1;
+            	}
+        	}
+        	oled_display_lines(&oled_lines[0]);
+        	break;
+    	case 2:
+        	USBSTK5515_ULED_off(0);
+        	USBSTK5515_ULED_on(1);
+
+        	for (p = 0; p < 48; p++) {
+            	oled_lines[p] = 0;
+        	}
+        	for (m = 0; m < 3; m++) {
+            	for (o = 0; o < 8; o++) {
+                	oled_lines[6*o + m] = gain_presets[2][o] * 8 + 1;
+            	}
+        	}
+        	oled_display_lines(&oled_lines[0]);
+        	break;
+    	case 3:
+        	USBSTK5515_ULED_on(0);
+        	USBSTK5515_ULED_on(1);
+
+        	for (p = 0; p < 48; p++) {
+            	oled_lines[p] = 0;
+        	}
+        	for (m = 0; m < 3; m++) {
+            	for (o = 0; o < 8; o++) {
+                	oled_lines[6*o + m] = gain_presets[3][o] * 8 + 1;
+            	}
+        	}
+        	oled_display_lines(&oled_lines[0]);
+        	break;
+	}
+}
+
+
+// Main program
+
+void main(void) {
+
+	//Initialization
+	USBSTK5515_init();
+	pll_frequency_setup(120);
+	aic3204_hardware_init();
+	aic3204_init();
+	set_sampling_frequency_and_gain(FS, GAIN_IN_dB);
+
+	oled_init();
+
+	update_gains(); // Load initial gains
+
+	for (i = 0; i < 4 * NUM_SOS + 1; i++) {
+    	delay_buffer1[i] = 0; // initialize to 0
+    	delay_buffer2[i] = 0;
+    	delay_buffer3[i] = 0;
+    	delay_buffer4[i] = 0;
+    	delay_buffer5[i] = 0;
+    	delay_buffer6[i] = 0;
+    	delay_buffer7[i] = 0;
+    	delay_buffer8[i] = 0;
+	}
+
+	for (i = 0; i < FS * 600L; i++) {
+    	aic3204_codec_read(&x_left, &x_right);
+    	x[k] = stereo_to_mono(x_left, x_right);
+
+    	k++;
+
+    	if (k == 2 * N) {
+        	oflag = iircas51_q214(&x[N], LP, &y1[N], delay_buffer1, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[N], BP_1, &y2[N], delay_buffer2, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[N], BP_2, &y3[N], delay_buffer3, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[N], BP_3, &y4[N], delay_buffer4, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[N], BP_4, &y5[N], delay_buffer5, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[N], BP_5, &y6[N], delay_buffer6, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[N], BP_6, &y7[N], delay_buffer7, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[N], HP, &y8[N], delay_buffer8, NUM_SOS, N);
+        	sign *= -1;
+        	k = 0;
+    	}
+
+    	if (k == N) {
+        	oflag = iircas51_q214(&x[0], LP, &y1[0], delay_buffer1, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[0], BP_1, &y2[0], delay_buffer2, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[0], BP_2, &y3[0], delay_buffer3, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[0], BP_3, &y4[0], delay_buffer4, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[0], BP_4, &y5[0], delay_buffer5, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[0], BP_5, &y6[0], delay_buffer6, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[0], BP_6, &y7[0], delay_buffer7, NUM_SOS, N);
+        	oflag = iircas51_q214(&x[0], HP, &y8[0], delay_buffer8, NUM_SOS, N);
+        	sign *= -1;
+    	}
+
+    	// NOTE: change k to n = k + sign * N (for output buffer index, rather than input buffer)
+    	n = k + sign*N;
+
+    	temp = (long)y1[n]*gains[0] + (long)y2[n]*gains[1] + (long)y3[n]*gains[2] + (long)y4[n]*gains[3] + (long)y5[n]*gains[4] + (long)y6[n]*gains[5] + (long)y7[n]*gains[6] + (long)y8[n]*gains[7];
+    	// Apply gains to each filtered signal
+    	y_left = (Int16)(temp>>14);
+    	y_right = y_left;
+
+    	aic3204_codec_write(y_left, y_right);
+
+    	// Debounce switch SW1
+    	switches = pushbuttons_read_raw();
+    	if ((switches_1 == 0) && (switches == 1)) {
+        	preset_index = (preset_index + 1) % 4;
+        	update_gains();
+    	}
+    	switches_1 = switches;
+	}
+
+	aic3204_disable();
+	printf("\n***Program has Terminated***\n");
+	SW_BREAKPOINT;
+}
+
+
